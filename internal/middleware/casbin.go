@@ -18,7 +18,7 @@ func CasbinAuth(enforcer *casbin.Enforcer) gin.HandlerFunc {
 		}
 		obj := c.Request.URL.Path
 		act := c.Request.Method
-		dom := c.GetHeader("X-Tenant-Id")
+		dom := CasbinDomain(c)
 		ok, err := enforcer.Enforce(sub, obj, act, dom)
 		if err != nil {
 			response.FailWithHTTP(c, http.StatusInternalServerError, errcode.ErrInternal, "权限校验失败")

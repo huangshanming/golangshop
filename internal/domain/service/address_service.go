@@ -139,13 +139,88 @@ func (s *CouponService) ListMine(ctx context.Context, tenantID, userID uint64) (
 	return s.ListAvailable(ctx, tenantID, userID, 0)
 }
 
-type BalanceService struct {
-	repo     *repository.BalanceRepo
-	userRepo *repository.UserRepo
+type AdminCouponReq struct {
+	Name            string `json:"name" binding:"required"`
+	Type            string `json:"type" binding:"required"`
+	ThresholdAmount int64  `json:"threshold_amount"`
+	DiscountValue   int64  `json:"discount_value" binding:"required"`
+	MaxDiscount     int64  `json:"max_discount"`
+	ValidFrom       int64  `json:"valid_from" binding:"required"`
+	ValidTo         int64  `json:"valid_to" binding:"required"`
+	TotalCount      int64  `json:"total_count"`
+	PerUserLimit    int    `json:"per_user_limit"`
+	Status          int8   `json:"status"`
 }
 
-func NewBalanceService(repo *repository.BalanceRepo, userRepo *repository.UserRepo) *BalanceService {
-	return &BalanceService{repo: repo, userRepo: userRepo}
+func (s *CouponService) ListAdmin(ctx context.Context, tenantID uint64, page, pageSize int, keyword string) ([]model.Coupon, int64, error) {
+	return s.repo.ListPage(ctx, tenantID, page, pageSize, keyword)
+}
+
+func (s *CouponService) GetAdmin(ctx context.Context, tenantID, id uint64) (*model.Coupon, error) {
+	return s.repo.GetByID(ctx, tenantID, id)
+}
+
+func (s *CouponService) CreateAdmin(ctx context.Context, tenantID uint64, req AdminCouponReq) (*model.Coupon, error) {
+	if req.Type != model.CouponTypeFixed && req.Type != model.CouponTypePercent {
+		return nil, fmt.Errorf("invalid coupon type")
+	}
+	if req.PerUserLimit < 1 {
+		req.PerUserLimit = 1
+	}
+	if req.Status == 0 {
+		req.Status = 1
+	}
+	c := &model.Coupon{
+		TenantScoped:    model.TenantScoped{TenantID: tenantID},
+		Name:            req.Name,
+		Type:            req.Type,
+		ThresholdAmount: req.ThresholdAmount,
+		DiscountValue:   req.DiscountValue,
+		MaxDiscount:     req.MaxDiscount,
+		ValidFrom:       req.ValidFrom,
+		ValidTo:         req.ValidTo,
+		TotalCount:      req.TotalCount,
+		PerUserLimit:    req.PerUserLimit,
+		Status:          req.Status,
+	}
+	return c, s.repo.Create(ctx, c)
+}
+
+func (s *CouponService) UpdateAdmin(ctx context.Context, tenantID, id uint64, req AdminCouponReq) (*model.Coupon, error) {
+	c, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	if req.Type != model.CouponTypeFixed && req.Type != model.CouponTypePercent {
+		return nil, fmt.Errorf("invalid coupon type")
+	}
+	c.Name = req.Name
+	c.Type = req.Type
+	c.ThresholdAmount = req.ThresholdAmount
+	c.DiscountValue = req.DiscountValue
+	c.MaxDiscount = req.MaxDiscount
+	c.ValidFrom = req.ValidFrom
+	c.ValidTo = req.ValidTo
+	c.TotalCount = req.TotalCount
+	if req.PerUserLimit >= 1 {
+		c.PerUserLimit = req.PerUserLimit
+	}
+	c.Status = req.Status
+	return c, s.repo.Update(ctx, c)
+}
+
+func (s *CouponService) UpdateStatusAdmin(ctx context.Context, tenantID, id uint64, status int8) error {
+	return s.repo.UpdateStatus(ctx, tenantID, id, status)
+}
+
+type BalanceService struct {
+	repo      *repository.BalanceRepo
+	userRepo  *repository.UserRepo
+	orderRepo *repository.OrderRepo
+}
+
+func NewBalanceService(repo *repository.BalanceRepo, userRepo *repository.UserRepo, orderRepo *repository.OrderRepo) *BalanceService {
+	return &BalanceService{repo: repo, userRepo: userRepo, orderRepo: orderRepo}
 }
 
 func (s *BalanceService) Adjust(ctx context.Context, tenantID, userID uint64, change int64, remark string, operatorID uint64) error {
@@ -156,8 +231,16 @@ func (s *BalanceService) Adjust(ctx context.Context, tenantID, userID uint64, ch
 	return s.repo.ChangeBalance(ctx, tenantID, userID, change, log)
 }
 
-func (s *BalanceService) ListLogs(ctx context.Context, tenantID, userID uint64, page, pageSize int) ([]model.UserBalanceLog, int64, error) {
-	return s.repo.ListLogs(ctx, tenantID, userID, page, pageSize)
+func (s *BalanceService) ListLogs(ctx context.Context, tenantID, userID uint64, page, pageSize int) ([]BalanceLogVO, int64, error) {
+	logs, total, err := s.repo.ListLogs(ctx, tenantID, userID, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	vos, err := enrichBalanceLogs(ctx, s.orderRepo, tenantID, logs)
+	if err != nil {
+		return nil, 0, err
+	}
+	return vos, total, nil
 }
 
 func (s *BalanceService) ListUsers(ctx context.Context, tenantID uint64, page, pageSize int, keyword string) ([]model.User, int64, error) {

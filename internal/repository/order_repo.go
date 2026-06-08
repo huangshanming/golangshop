@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"goshop/internal/domain/model"
 )
@@ -18,23 +19,32 @@ func NewOrderRepo(db *gorm.DB) *OrderRepo { return &OrderRepo{db: db} }
 func (r *OrderRepo) DB() *gorm.DB { return r.db }
 
 func (r *OrderRepo) CreateWithTx(tx *gorm.DB, order *model.Order) error {
-	if err := tx.Create(order).Error; err != nil {
+	items := order.Items
+	promotions := order.Promotions
+	order.Items = nil
+	order.Promotions = nil
+
+	if err := tx.Omit(clause.Associations).Create(order).Error; err != nil {
 		return err
 	}
-	for i := range order.Items {
-		order.Items[i].OrderID = order.ID
-		order.Items[i].TenantID = order.TenantID
-		if err := tx.Create(&order.Items[i]).Error; err != nil {
+	for i := range items {
+		items[i].ID = 0
+		items[i].OrderID = order.ID
+		items[i].TenantID = order.TenantID
+		if err := tx.Create(&items[i]).Error; err != nil {
 			return err
 		}
 	}
-	for i := range order.Promotions {
-		order.Promotions[i].OrderID = order.ID
-		order.Promotions[i].TenantID = order.TenantID
-		if err := tx.Create(&order.Promotions[i]).Error; err != nil {
+	for i := range promotions {
+		promotions[i].ID = 0
+		promotions[i].OrderID = order.ID
+		promotions[i].TenantID = order.TenantID
+		if err := tx.Create(&promotions[i]).Error; err != nil {
 			return err
 		}
 	}
+	order.Items = items
+	order.Promotions = promotions
 	return nil
 }
 
@@ -169,14 +179,38 @@ func (r *PayNotifyRepo) MarkProcessed(ctx context.Context, notifyID string) erro
 		Update("processed", true).Error
 }
 
+func (r *OrderRepo) ListByOrderNos(ctx context.Context, tenantID uint64, orderNos []string) ([]model.Order, error) {
+	if len(orderNos) == 0 {
+		return nil, nil
+	}
+	var orders []model.Order
+	err := r.db.WithContext(ctx).Preload("Items").
+		Where("tenant_id = ? AND order_no IN ?", tenantID, orderNos).
+		Find(&orders).Error
+	return orders, err
+}
+
 func (r *OrderRepo) RunInTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return r.db.WithContext(ctx).Transaction(fn)
 }
 
-func (r *OrderRepo) Ship(ctx context.Context, tenantID uint64, orderNo string, shippedAt int64) error {
-	return r.UpdateStatus(ctx, tenantID, orderNo, model.OrderStatusPaid, model.OrderStatusShipped, map[string]interface{}{
-		"shipped_at": shippedAt,
-	})
+func (r *OrderRepo) Ship(ctx context.Context, tenantID uint64, orderNo, expressCompany, expressNo, shipRemark string, shippedAt int64) error {
+	res := r.db.WithContext(ctx).Model(&model.Order{}).
+		Where("tenant_id = ? AND order_no = ? AND status = ?", tenantID, orderNo, model.OrderStatusPaid).
+		Updates(map[string]interface{}{
+			"status":           model.OrderStatusShipped,
+			"shipped_at":       shippedAt,
+			"express_company":  expressCompany,
+			"express_no":       expressNo,
+			"ship_remark":      shipRemark,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (r *OrderRepo) ConfirmReceive(ctx context.Context, tenantID, userID uint64, orderNo string, now int64) error {

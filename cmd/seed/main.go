@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -12,7 +13,10 @@ import (
 
 	"goshop/internal/config"
 	"goshop/internal/domain/model"
+	"goshop/internal/domain/service"
 	"goshop/internal/infra/database"
+	"goshop/internal/repository"
+	"goshop/pkg/jwtutil"
 )
 
 func main() {
@@ -31,46 +35,116 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	tenant := ensureTenant(db)
-	ensureAdmin(db, tenant.ID)
-	ensureCategoriesAndProducts(db, tenant.ID)
-	ensureFreightAndCoupons(db, tenant.ID)
-	ensureDemoUser(db, tenant.ID)
+	tenants := ensureTenants(db)
+	ensureDefaultRBAC(db)
+	ensurePlatformSuperAdmin(db)
+	ensurePlatformHomeData(db)
+	for _, tenant := range tenants {
+		ensureAdmin(db, tenant.ID)
+	}
+	defaultTenant := tenants[0]
+	ensureCategoriesAndProducts(db, defaultTenant.ID)
+	ensureFreightAndCoupons(db, defaultTenant.ID)
+	ensureDemoUser(db, defaultTenant.ID)
 
-	fmt.Println("seed completed: tenant_id=", tenant.ID)
+	fmt.Println("seed completed, tenants:", len(tenants))
 }
 
-func ensureTenant(db *gorm.DB) model.Tenant {
+func ensureDefaultRBAC(db *gorm.DB) {
+	rbacRepo := repository.NewRBACRepo(db)
+	adminRepo := repository.NewAdminRepo(db)
+	tenantRepo := repository.NewTenantRepo(db)
+	rbacSvc := service.NewRBACService(rbacRepo, adminRepo, tenantRepo, jwtutil.NewManager("x", "x", 1, 1))
+	if err := rbacSvc.EnsureDefaultRBAC(context.Background()); err != nil {
+		log.Fatalf("rbac seed: %v", err)
+	}
+}
+
+func ensureTenants(db *gorm.DB) []model.Tenant {
+	specs := []struct{ code, name string }{
+		{"default", "默认商城"},
+		{"beauty", "搜店网 美妆"},
+	}
+	out := make([]model.Tenant, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, ensureTenantByCode(db, s.code, s.name))
+	}
+	return out
+}
+
+func ensureTenantByCode(db *gorm.DB, code, name string) model.Tenant {
 	var t model.Tenant
-	if err := db.Where("code = ?", "default").First(&t).Error; err == nil {
+	if err := db.Where("code = ?", code).First(&t).Error; err == nil {
 		return t
 	}
-	t = model.Tenant{Name: "默认租户", Code: "default", Status: 1}
+	t = model.Tenant{Name: name, Code: code, Status: 1}
 	if err := db.Create(&t).Error; err != nil {
-		log.Fatalf("create tenant: %v", err)
+		log.Fatalf("create tenant %s: %v", code, err)
 	}
 	return t
 }
 
-func ensureAdmin(db *gorm.DB, tenantID uint64) {
+func ensurePlatformSuperAdmin(db *gorm.DB) {
 	var count int64
-	db.Model(&model.AdminUser{}).Where("tenant_id = ? AND username = ?", tenantID, "admin").Count(&count)
+	db.Model(&model.AdminUser{}).Where("tenant_id = 0 AND username = ?", "superadmin").Count(&count)
 	if count > 0 {
 		return
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 	admin := model.AdminUser{
-		TenantScoped: model.TenantScoped{TenantID: tenantID},
-		Username:     "admin",
-		Password:     string(hash),
-		Nickname:     "管理员",
-		Role:         "admin",
-		Status:       1,
+		TenantID: 0,
+		Username: "superadmin",
+		Password: string(hash),
+		Nickname: "总管理员",
+		UserType: model.AdminUserTypePlatform,
+		Role:     "super_admin",
+		Status:   1,
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		log.Fatalf("create superadmin: %v", err)
+	}
+	var role model.AdminRole
+	if err := db.Where("code = ? AND tenant_id = 0", "super_admin").First(&role).Error; err == nil {
+		_ = db.Create(&model.AdminUserRole{UserID: admin.ID, RoleID: role.ID}).Error
+	}
+	fmt.Println("platform admin created: superadmin / admin123")
+}
+
+func ensureAdmin(db *gorm.DB, tenantID uint64) {
+	var admin model.AdminUser
+	err := db.Where("tenant_id = ? AND username = ?", tenantID, "admin").First(&admin).Error
+	if err == nil {
+		db.Model(&admin).Update("user_type", model.AdminUserTypeTenant)
+		assignTenantAdminRole(db, admin.ID)
+		return
+	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+	admin = model.AdminUser{
+		TenantID: tenantID,
+		Username: "admin",
+		Password: string(hash),
+		Nickname: "管理员",
+		UserType: model.AdminUserTypeTenant,
+		Role:     "tenant_admin",
+		Status:   1,
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		log.Fatalf("create admin: %v", err)
 	}
-	fmt.Println("admin user created: admin / admin123")
+	assignTenantAdminRole(db, admin.ID)
+	fmt.Printf("admin user created: admin / admin123 (tenant %d)\n", tenantID)
+}
+
+func assignTenantAdminRole(db *gorm.DB, adminID uint64) {
+	var role model.AdminRole
+	if err := db.Where("code = ? AND tenant_id = 0", "tenant_admin").First(&role).Error; err != nil {
+		return
+	}
+	var n int64
+	db.Model(&model.AdminUserRole{}).Where("user_id = ? AND role_id = ?", adminID, role.ID).Count(&n)
+	if n == 0 {
+		_ = db.Create(&model.AdminUserRole{UserID: adminID, RoleID: role.ID}).Error
+	}
 }
 
 type seedSpecDim struct {
@@ -98,6 +172,23 @@ type seedProduct struct {
 	SKUs         []seedSKU
 }
 
+func ensurePlatformHomeData(db *gorm.DB) {
+	productRepo := repository.NewProductRepo(db)
+	platformRepo := repository.NewPlatformRepo(db)
+	tenantRepo := repository.NewTenantRepo(db)
+	platformSvc := service.NewPlatformService(platformRepo, productRepo, tenantRepo)
+	ctx := context.Background()
+	if err := platformSvc.EnsurePlatformCategories(ctx); err != nil {
+		log.Fatalf("platform categories: %v", err)
+	}
+	if err := platformSvc.EnsureDefaultSiteSettings(ctx); err != nil {
+		log.Fatalf("platform settings: %v", err)
+	}
+	if err := platformSvc.EnsureDefaultBanners(ctx); err != nil {
+		log.Fatalf("platform banners: %v", err)
+	}
+}
+
 func ensureCategoriesAndProducts(db *gorm.DB, tenantID uint64) {
 	var count int64
 	db.Model(&model.Product{}).Where("tenant_id = ?", tenantID).Count(&count)
@@ -105,20 +196,14 @@ func ensureCategoriesAndProducts(db *gorm.DB, tenantID uint64) {
 		return
 	}
 
-	categories := []model.ProductCategory{
-		{TenantScoped: model.TenantScoped{TenantID: tenantID}, Name: "数码", Sort: 1, Status: 1},
-		{TenantScoped: model.TenantScoped{TenantID: tenantID}, Name: "服饰", Sort: 2, Status: 1},
-		{TenantScoped: model.TenantScoped{TenantID: tenantID}, Name: "居家", Sort: 3, Status: 1},
-		{TenantScoped: model.TenantScoped{TenantID: tenantID}, Name: "美食", Sort: 4, Status: 1},
-	}
-	for i := range categories {
-		if err := db.Create(&categories[i]).Error; err != nil {
-			log.Fatalf("create category: %v", err)
-		}
-	}
 	catMap := make(map[string]uint64)
-	for _, c := range categories {
+	var platformCats []model.PlatformCategory
+	db.Where("parent_id = 0").Find(&platformCats)
+	for _, c := range platformCats {
 		catMap[c.Name] = c.ID
+	}
+	if len(catMap) == 0 {
+		log.Fatal("platform categories not seeded")
 	}
 
 	products := []seedProduct{
@@ -236,6 +321,11 @@ func ensureCategoriesAndProducts(db *gorm.DB, tenantID uint64) {
 		}
 		if err := db.Create(&p).Error; err != nil {
 			log.Fatalf("create product: %v", err)
+		}
+		var featuredCount int64
+		db.Model(&model.HomeFeaturedProduct{}).Count(&featuredCount)
+		if featuredCount < 6 {
+			_ = db.Create(&model.HomeFeaturedProduct{ProductID: p.ID, Sort: int(featuredCount) + 1, Status: 1}).Error
 		}
 		for _, s := range sp.SKUs {
 			specValuesJSON, _ := json.Marshal(s.SpecValues)

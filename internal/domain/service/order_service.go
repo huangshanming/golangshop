@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -181,8 +184,42 @@ func (s *OrderService) closeOrder(ctx context.Context, o *model.Order, now int64
 	})
 }
 
-func (s *OrderService) Ship(ctx context.Context, tenantID uint64, orderNo string) error {
-	return s.orderRepo.Ship(ctx, tenantID, orderNo, time.Now().Unix())
+type ShipOrderReq struct {
+	ExpressCompany string `json:"express_company" binding:"required"`
+	ExpressNo      string `json:"express_no" binding:"required"`
+	ShipRemark     string `json:"ship_remark"`
+}
+
+func (s *OrderService) Ship(ctx context.Context, tenantID uint64, orderNo string, req ShipOrderReq) error {
+	company := strings.TrimSpace(req.ExpressCompany)
+	expressNo := strings.TrimSpace(req.ExpressNo)
+	remark := strings.TrimSpace(req.ShipRemark)
+	if company == "" {
+		return fmt.Errorf("请选择物流公司")
+	}
+	if _, ok := model.ExpressCompanyNames[company]; !ok {
+		return fmt.Errorf("物流公司无效")
+	}
+	if expressNo == "" {
+		return fmt.Errorf("请填写物流单号")
+	}
+	if len(expressNo) < 6 || len(expressNo) > 64 {
+		return fmt.Errorf("物流单号长度应为 6~64 位")
+	}
+	if utf8.RuneCountInString(remark) > 200 {
+		return fmt.Errorf("发货备注过长")
+	}
+	o, err := s.orderRepo.FindByOrderNo(ctx, tenantID, orderNo)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("订单不存在")
+		}
+		return err
+	}
+	if o.Status != model.OrderStatusPaid {
+		return fmt.Errorf("仅待发货订单可发货")
+	}
+	return s.orderRepo.Ship(ctx, tenantID, orderNo, company, expressNo, remark, time.Now().Unix())
 }
 
 func (s *OrderService) ListAdmin(ctx context.Context, tenantID uint64, page, pageSize int, status *int8) ([]model.Order, int64, error) {

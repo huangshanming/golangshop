@@ -16,6 +16,8 @@ export interface BalanceLog {
   biz_no: string
   remark: string
   created_at: string
+  order_no?: string
+  goods_summary?: string
 }
 
 export interface PageResult<T> {

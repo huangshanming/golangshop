@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { mockPayOrder, payOrder } from '../../api/order'
+import { mockPayOrder, payOrder, fetchOrderDetail } from '../../api/order'
 import { formatPrice } from '../../utils/format'
 
 const orderNo = ref('')
@@ -9,12 +9,21 @@ const amount = ref(0)
 const payChannel = ref<'balance' | 'wechat' | 'alipay'>('wechat')
 const paying = ref(false)
 
-onLoad((query) => {
+onLoad(async (query) => {
   orderNo.value = String(query?.order_no || '')
   amount.value = Number(query?.amount || 0)
   if (!orderNo.value) {
     uni.showToast({ title: '订单号无效', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 1500)
+    return
+  }
+  if (!amount.value) {
+    try {
+      const order = await fetchOrderDetail(orderNo.value)
+      amount.value = order.pay_amount
+    } catch {
+      /* handled */
+    }
   }
 })
 

@@ -15,7 +15,7 @@ const (
 
 type Order struct {
 	BaseModel
-	TenantScoped
+	TenantID        uint64 `gorm:"uniqueIndex:idx_tenant_client_order,priority:1;index;not null" json:"tenant_id"`
 	OrderNo         string `gorm:"size:64;uniqueIndex;not null" json:"order_no"`
 	ClientOrderNo   string `gorm:"size:64;uniqueIndex:idx_tenant_client_order,priority:2" json:"client_order_no"`
 	UserID          uint64 `gorm:"index;not null" json:"user_id"`
@@ -32,6 +32,9 @@ type Order struct {
 	AddressSnapshot string `gorm:"type:text" json:"address_snapshot"`
 	ExpireAt        int64  `gorm:"default:0" json:"expire_at"`
 	ShippedAt       *int64 `json:"shipped_at"`
+	ExpressCompany  string `gorm:"size:32" json:"express_company"`
+	ExpressNo       string `gorm:"size:64;index" json:"express_no"`
+	ShipRemark      string `gorm:"size:256" json:"ship_remark"`
 	ReceivedAt      *int64 `json:"received_at"`
 	CompletedAt     *int64 `json:"completed_at"`
 	ReviewStatus    int8   `gorm:"default:0" json:"review_status"`

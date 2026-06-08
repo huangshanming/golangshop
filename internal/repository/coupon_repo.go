@@ -39,6 +39,36 @@ func (r *CouponRepo) ListAll(ctx context.Context, tenantID uint64) ([]model.Coup
 	return list, err
 }
 
+func (r *CouponRepo) ListPage(ctx context.Context, tenantID uint64, page, pageSize int, keyword string) ([]model.Coupon, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	q := r.db.WithContext(ctx).Model(&model.Coupon{}).Where("tenant_id = ?", tenantID)
+	if keyword != "" {
+		q = q.Where("name LIKE ?", "%"+keyword+"%")
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.Coupon
+	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error
+	return list, total, err
+}
+
+func (r *CouponRepo) Update(ctx context.Context, c *model.Coupon) error {
+	return r.db.WithContext(ctx).Save(c).Error
+}
+
+func (r *CouponRepo) UpdateStatus(ctx context.Context, tenantID, id uint64, status int8) error {
+	return r.db.WithContext(ctx).Model(&model.Coupon{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Update("status", status).Error
+}
+
 func (r *CouponRepo) GetUserCoupon(ctx context.Context, tenantID, userID, userCouponID uint64) (*model.UserCoupon, error) {
 	var uc model.UserCoupon
 	err := r.db.WithContext(ctx).Where("tenant_id = ? AND user_id = ? AND id = ?", tenantID, userID, userCouponID).First(&uc).Error

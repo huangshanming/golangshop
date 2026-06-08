@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: GoShop API
+  title: 搜店网 API
   version: 1.0.0
-  description: GoShop 商城 REST API
+  description: 搜店网 商城 REST API
 servers:
   - url: http://localhost:8080
     description: Local

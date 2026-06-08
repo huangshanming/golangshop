@@ -11,10 +11,19 @@ import (
 type ProductService struct {
 	repo         *repository.ProductRepo
 	categoryRepo *repository.CategoryRepo
+	platformRepo *repository.PlatformRepo
+	tenantRepo   *repository.TenantRepo
 }
 
-func NewProductService(repo *repository.ProductRepo, categoryRepo *repository.CategoryRepo) *ProductService {
-	return &ProductService{repo: repo, categoryRepo: categoryRepo}
+func NewProductService(repo *repository.ProductRepo, categoryRepo *repository.CategoryRepo, platformRepo *repository.PlatformRepo, tenantRepo *repository.TenantRepo) *ProductService {
+	return &ProductService{repo: repo, categoryRepo: categoryRepo, platformRepo: platformRepo, tenantRepo: tenantRepo}
+}
+
+func (s *ProductService) platformCategoryNames(ctx context.Context, ids []uint64) (map[uint64]string, error) {
+	if s.platformRepo == nil || len(ids) == 0 {
+		return map[uint64]string{}, nil
+	}
+	return s.platformRepo.GetCategoryNamesByIDs(ctx, ids)
 }
 
 type ProductListItem struct {
@@ -24,6 +33,7 @@ type ProductListItem struct {
 	OriginalPrice int64  `json:"original_price"`
 	TotalStock    int64  `json:"total_stock"`
 	CategoryName  string `json:"category_name"`
+	TenantName    string `json:"tenant_name,omitempty"`
 }
 
 type SKUInputItem struct {
@@ -66,7 +76,7 @@ func (s *ProductService) buildListItems(ctx context.Context, tenantID uint64, pr
 	if err != nil {
 		return nil, err
 	}
-	categoryNames, err := s.categoryRepo.GetNamesByIDs(ctx, tenantID, categoryIDs)
+	categoryNames, err := s.platformCategoryNames(ctx, categoryIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +98,113 @@ func (s *ProductService) buildListItems(ctx context.Context, tenantID uint64, pr
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (s *ProductService) buildMarketplaceItems(ctx context.Context, rows []repository.ProductWithTenant) ([]ProductListItem, error) {
+	if len(rows) == 0 {
+		return []ProductListItem{}, nil
+	}
+	products := make([]model.Product, 0, len(rows))
+	productIDs := make([]uint64, 0, len(rows))
+	categoryIDs := make([]uint64, 0)
+	for _, row := range rows {
+		products = append(products, row.Product)
+		productIDs = append(productIDs, row.ID)
+		if row.CategoryID > 0 {
+			categoryIDs = append(categoryIDs, row.CategoryID)
+		}
+	}
+	skuMap, err := s.repo.ListSKUByProductsGlobal(ctx, productIDs)
+	if err != nil {
+		return nil, err
+	}
+	categoryNames, err := s.platformCategoryNames(ctx, categoryIDs)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]ProductListItem, 0, len(rows))
+	for _, row := range rows {
+		item := ProductListItem{
+			Product:      row.Product,
+			TenantName:   row.TenantName,
+			CategoryName: categoryNames[row.CategoryID],
+		}
+		for _, sku := range skuMap[row.ID] {
+			if item.MinPrice == 0 || sku.Price < item.MinPrice {
+				item.MinPrice = sku.Price
+				item.OriginalPrice = sku.OriginalPrice
+			}
+			if sku.Price > item.MaxPrice {
+				item.MaxPrice = sku.Price
+			}
+			item.TotalStock += sku.Stock
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+type MarketplaceQuery struct {
+	Keyword    string
+	CategoryID uint64
+	TenantID   uint64
+	ProductIDs []uint64
+}
+
+func (s *ProductService) ListMarketplace(ctx context.Context, page, pageSize int, q MarketplaceQuery) ([]ProductListItem, int64, error) {
+	page, pageSize = normalizePage(page, pageSize)
+	var categoryIDs []uint64
+	if q.CategoryID > 0 && s.platformRepo != nil {
+		ids, err := s.platformRepo.ListCategoryDescendantIDs(ctx, q.CategoryID)
+		if err != nil {
+			return nil, 0, err
+		}
+		categoryIDs = ids
+	}
+	var tenantID *uint64
+	if q.TenantID > 0 {
+		tenantID = &q.TenantID
+	}
+	filter := repository.MarketplaceListFilter{
+		Keyword: q.Keyword, CategoryIDs: categoryIDs, TenantID: tenantID, ProductIDs: q.ProductIDs,
+	}
+	list, total, err := s.repo.ListAcrossTenantsFiltered(ctx, page, pageSize, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	items, err := s.buildMarketplaceItems(ctx, list)
+	return items, total, err
+}
+
+func (s *ProductService) SearchGlobal(ctx context.Context, keyword string, limit int) ([]ProductListItem, error) {
+	if limit < 1 || limit > 50 {
+		limit = 20
+	}
+	items, _, err := s.ListMarketplace(ctx, 1, limit, MarketplaceQuery{Keyword: keyword})
+	return items, err
+}
+
+func (s *ProductService) DetailPublic(ctx context.Context, productID uint64) (*ProductListItem, []model.ProductSKU, error) {
+	p, err := s.repo.GetByIDGlobal(ctx, productID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if p.Status != 1 {
+		return nil, nil, errors.New("product off sale")
+	}
+	tenantName := ""
+	if s.tenantRepo != nil {
+		if tenant, err := s.tenantRepo.GetByID(ctx, p.TenantID); err == nil {
+			tenantName = tenant.Name
+		}
+	}
+	items, err := s.buildListItems(ctx, p.TenantID, []model.Product{*p}, false)
+	if err != nil || len(items) == 0 {
+		return nil, nil, err
+	}
+	items[0].TenantName = tenantName
+	skus, err := s.repo.ListSKUByProduct(ctx, p.TenantID, productID)
+	return &items[0], skus, err
 }
 
 func (s *ProductService) ListApp(ctx context.Context, tenantID uint64, page, pageSize int, categoryID uint64, keyword string) ([]ProductListItem, int64, error) {

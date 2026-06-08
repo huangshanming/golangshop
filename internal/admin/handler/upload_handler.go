@@ -33,7 +33,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	}
 	defer f.Close()
 
-	result, err := h.svc.UploadImage(c.Request.Context(), middleware.GetTenantID(c), file.Filename, f, file.Size)
+	result, err := h.svc.UploadImage(c.Request.Context(), middleware.GetAdminDataTenantID(c), file.Filename, f, file.Size)
 	if err != nil {
 		response.Fail(c, 40000, err.Error())
 		return

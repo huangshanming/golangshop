@@ -35,7 +35,15 @@ func AutoMigrate(db *gorm.DB) error {
 		&domainmodel.Tenant{},
 		&domainmodel.User{},
 		&domainmodel.AdminUser{},
+		&domainmodel.AdminMenu{},
+		&domainmodel.AdminRole{},
+		&domainmodel.AdminRoleMenu{},
+		&domainmodel.AdminUserRole{},
 		&domainmodel.ProductCategory{},
+		&domainmodel.PlatformCategory{},
+		&domainmodel.HomeBanner{},
+		&domainmodel.PlatformSetting{},
+		&domainmodel.HomeFeaturedProduct{},
 		&domainmodel.Product{},
 		&domainmodel.ProductSKU{},
 		&domainmodel.CartItem{},
@@ -52,7 +60,32 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
-	return fixLegacySkuIDColumns(db)
+	if err := fixLegacySkuIDColumns(db); err != nil {
+		return err
+	}
+	return fixCompositeUniqueIndexes(db)
+}
+
+func fixCompositeUniqueIndexes(db *gorm.DB) error {
+	migrator := db.Migrator()
+	for _, item := range []struct {
+		table string
+		index string
+		model interface{}
+	}{
+		{"admin_users", "idx_tenant_username", &domainmodel.AdminUser{}},
+		{"orders", "idx_tenant_client_order", &domainmodel.Order{}},
+	} {
+		if migrator.HasIndex(item.table, item.index) {
+			if err := migrator.DropIndex(item.table, item.index); err != nil {
+				return fmt.Errorf("drop %s.%s: %w", item.table, item.index, err)
+			}
+		}
+		if err := db.AutoMigrate(item.model); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GORM 曾将 SKUID 映射为 sk_uid，与代码/接口约定的 sku_id 不一致。

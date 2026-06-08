@@ -20,10 +20,6 @@ func AppJWT(jwtMgr *jwtutil.Manager) gin.HandlerFunc {
 	return jwtAuth(jwtMgr.ParseAppToken)
 }
 
-func AdminJWT(jwtMgr *jwtutil.Manager) gin.HandlerFunc {
-	return jwtAuth(jwtMgr.ParseAdminToken)
-}
-
 func jwtAuth(parse func(string) (*jwtutil.Claims, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")

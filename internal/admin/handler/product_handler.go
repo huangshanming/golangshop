@@ -12,11 +12,12 @@ import (
 )
 
 type ProductHandler struct {
-	svc *service.ProductService
+	svc      *service.ProductService
+	platform *service.PlatformService
 }
 
-func NewProductHandler(svc *service.ProductService) *ProductHandler {
-	return &ProductHandler{svc: svc}
+func NewProductHandler(svc *service.ProductService, platform *service.PlatformService) *ProductHandler {
+	return &ProductHandler{svc: svc, platform: platform}
 }
 
 type skuReq struct {
@@ -64,7 +65,7 @@ func (h *ProductHandler) List(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	keyword := c.Query("keyword")
 
-	list, total, err := h.svc.ListAdmin(c.Request.Context(), middleware.GetTenantID(c), page, pageSize, keyword)
+	list, total, err := h.svc.ListAdmin(c.Request.Context(), middleware.GetAdminDataTenantID(c), page, pageSize, keyword)
 	if err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
@@ -74,7 +75,7 @@ func (h *ProductHandler) List(c *gin.Context) {
 
 func (h *ProductHandler) Detail(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	p, skus, err := h.svc.AdminDetail(c.Request.Context(), middleware.GetTenantID(c), id)
+	p, skus, err := h.svc.AdminDetail(c.Request.Context(), middleware.GetAdminDataTenantID(c), id)
 	if err != nil {
 		response.Fail(c, 40402, "商品不存在")
 		return
@@ -88,7 +89,7 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		response.Fail(c, 40000, err.Error())
 		return
 	}
-	tenantID := middleware.GetTenantID(c)
+	tenantID := middleware.GetAdminDataTenantID(c)
 	p := &model.Product{
 		TenantScoped: model.TenantScoped{TenantID: tenantID},
 		CategoryID:   req.CategoryID,
@@ -102,6 +103,10 @@ func (h *ProductHandler) Create(c *gin.Context) {
 	}
 	skus, err := toSKUs(req.Specs, req.SKUs)
 	if err != nil {
+		response.Fail(c, 40000, err.Error())
+		return
+	}
+	if err := h.platform.ValidateCategoryID(c.Request.Context(), req.CategoryID); err != nil {
 		response.Fail(c, 40000, err.Error())
 		return
 	}
@@ -119,7 +124,7 @@ func (h *ProductHandler) Update(c *gin.Context) {
 		response.Fail(c, 40000, err.Error())
 		return
 	}
-	tenantID := middleware.GetTenantID(c)
+	tenantID := middleware.GetAdminDataTenantID(c)
 	p := &model.Product{
 		CategoryID:  req.CategoryID,
 		Name:        req.Name,
@@ -131,6 +136,10 @@ func (h *ProductHandler) Update(c *gin.Context) {
 	}
 	skus, err := toSKUs(req.Specs, req.SKUs)
 	if err != nil {
+		response.Fail(c, 40000, err.Error())
+		return
+	}
+	if err := h.platform.ValidateCategoryID(c.Request.Context(), req.CategoryID); err != nil {
 		response.Fail(c, 40000, err.Error())
 		return
 	}
@@ -152,7 +161,7 @@ func (h *ProductHandler) UpdateStatus(c *gin.Context) {
 		response.Fail(c, 40000, "status 无效")
 		return
 	}
-	if err := h.svc.UpdateStatus(c.Request.Context(), middleware.GetTenantID(c), id, req.Status); err != nil {
+	if err := h.svc.UpdateStatus(c.Request.Context(), middleware.GetAdminDataTenantID(c), id, req.Status); err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
 	}

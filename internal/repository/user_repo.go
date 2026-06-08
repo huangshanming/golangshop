@@ -45,18 +45,8 @@ func (r *UserRepo) List(ctx context.Context, tenantID uint64, page, pageSize int
 	return list, total, err
 }
 
-type AdminRepo struct {
-	db *gorm.DB
-}
-
-func NewAdminRepo(db *gorm.DB) *AdminRepo { return &AdminRepo{db: db} }
-
-func (r *AdminRepo) FindByUsername(ctx context.Context, tenantID uint64, username string) (*model.AdminUser, error) {
-	var u model.AdminUser
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND username = ?", tenantID, username).First(&u).Error
-	return &u, err
-}
-
-func (r *AdminRepo) Create(ctx context.Context, u *model.AdminUser) error {
-	return r.db.WithContext(ctx).Create(u).Error
+func (r *UserRepo) UpdateProfile(ctx context.Context, tenantID, userID uint64, nickname string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("tenant_id = ? AND id = ?", tenantID, userID).
+		Update("nickname", nickname).Error
 }

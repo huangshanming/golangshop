@@ -20,7 +20,9 @@ import (
 
 type Handlers struct {
 	AppAuth       *apphandler.AuthHandler
+	AppUser       *apphandler.UserHandler
 	AppProduct    *apphandler.ProductHandler
+	AppHome       *apphandler.HomeHandler
 	AppCategory   *apphandler.CategoryHandler
 	AppCart       *apphandler.CartHandler
 	AppOrder      *apphandler.OrderHandler
@@ -28,12 +30,17 @@ type Handlers struct {
 	AppCoupon     *apphandler.CouponHandler
 	AppAfterSale  *apphandler.AfterSaleHandler
 	AppPayNotify  *apphandler.PayNotifyHandler
+	AppTenant     *apphandler.TenantHandler
 	AdminAuth     *adminhandler.AuthHandler
+	AdminRBAC     *adminhandler.RBACHandler
 	AdminProduct  *adminhandler.ProductHandler
 	AdminCategory *adminhandler.CategoryHandler
 	AdminUpload   *adminhandler.UploadHandler
 	AdminUser     *adminhandler.AdminUserHandler
 	AdminOrder    *adminhandler.AdminOrderHandler
+	AdminCoupon   *adminhandler.CouponHandler
+	AdminTenant   *adminhandler.AdminTenantHandler
+	AdminPlatform *adminhandler.PlatformHandler
 }
 
 type RouterDeps struct {
@@ -75,6 +82,15 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	api := r.Group("/api/v1")
+	api.GET("/public/tenants", deps.Handlers.AppTenant.ListPublic)
+	api.GET("/public/site-settings", deps.Handlers.AppHome.SiteSettings)
+	api.GET("/public/banners", deps.Handlers.AppHome.Banners)
+	api.GET("/public/categories", deps.Handlers.AppHome.Categories)
+	api.GET("/public/categories/tree", deps.Handlers.AppHome.CategoryTree)
+	api.GET("/public/products/featured", deps.Handlers.AppHome.FeaturedProducts)
+	api.GET("/public/products", deps.Handlers.AppProduct.ListPublic)
+	api.GET("/public/products/:id", deps.Handlers.AppProduct.DetailPublic)
+
 	pay := api.Group("/pay")
 	{
 		pay.POST("/notify/wechat", deps.Handlers.AppPayNotify.Wechat)
@@ -119,11 +135,14 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 			auth.POST("/orders/:order_no/review", deps.Handlers.AppOrder.Review)
 
 			auth.POST("/after-sales", deps.Handlers.AppAfterSale.Create)
+
+			auth.GET("/user/me", deps.Handlers.AppUser.Me)
+			auth.PUT("/user/profile", deps.Handlers.AppUser.UpdateProfile)
+			auth.GET("/user/balance-logs", deps.Handlers.AppUser.BalanceLogs)
 		}
 	}
 
 	admin := api.Group("/admin")
-	admin.Use(middleware.Tenant())
 	{
 		admin.POST("/auth/login", deps.Handlers.AdminAuth.Login)
 
@@ -133,20 +152,72 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 			secured.Use(middleware.CasbinAuth(deps.Enforcer))
 		}
 		{
-			secured.GET("/products", deps.Handlers.AdminProduct.List)
-			secured.POST("/products", deps.Handlers.AdminProduct.Create)
-			secured.GET("/products/:id", deps.Handlers.AdminProduct.Detail)
-			secured.PUT("/products/:id", deps.Handlers.AdminProduct.Update)
-			secured.PATCH("/products/:id/status", deps.Handlers.AdminProduct.UpdateStatus)
-			secured.GET("/categories", deps.Handlers.AdminCategory.List)
-			secured.POST("/upload", deps.Handlers.AdminUpload.Upload)
+			secured.GET("/auth/me", deps.Handlers.AdminAuth.Me)
+			secured.POST("/auth/enter-tenant", deps.Handlers.AdminAuth.EnterTenant)
+			secured.POST("/auth/exit-tenant", deps.Handlers.AdminAuth.ExitTenant)
 
-			secured.GET("/users", deps.Handlers.AdminUser.List)
-			secured.POST("/users/:id/balance", deps.Handlers.AdminUser.AdjustBalance)
-			secured.GET("/users/:id/balance-logs", deps.Handlers.AdminUser.BalanceLogs)
+			secured.GET("/menus", deps.Handlers.AdminRBAC.ListMenus)
+			secured.POST("/menus", deps.Handlers.AdminRBAC.CreateMenu)
+			secured.PUT("/menus/:id", deps.Handlers.AdminRBAC.UpdateMenu)
+			secured.DELETE("/menus/:id", deps.Handlers.AdminRBAC.DeleteMenu)
 
-			secured.GET("/orders", deps.Handlers.AdminOrder.List)
-			secured.POST("/orders/:order_no/ship", deps.Handlers.AdminOrder.Ship)
+			secured.GET("/roles", deps.Handlers.AdminRBAC.ListRoles)
+			secured.POST("/roles", deps.Handlers.AdminRBAC.CreateRole)
+			secured.PUT("/roles/:id", deps.Handlers.AdminRBAC.UpdateRole)
+			secured.DELETE("/roles/:id", deps.Handlers.AdminRBAC.DeleteRole)
+			secured.GET("/roles/:id/menus", deps.Handlers.AdminRBAC.GetRoleMenus)
+			secured.PUT("/roles/:id/menus", deps.Handlers.AdminRBAC.SetRoleMenus)
+
+			secured.GET("/admins", deps.Handlers.AdminRBAC.ListAdmins)
+			secured.POST("/admins", deps.Handlers.AdminRBAC.CreateAdmin)
+			secured.PUT("/admins/:id", deps.Handlers.AdminRBAC.UpdateAdmin)
+			secured.GET("/admins/:id/roles", deps.Handlers.AdminRBAC.GetAdminRoles)
+
+			secured.GET("/tenants", deps.Handlers.AdminTenant.List)
+			secured.POST("/tenants", deps.Handlers.AdminTenant.Create)
+			secured.GET("/tenants/:id", deps.Handlers.AdminTenant.Detail)
+			secured.GET("/tenants/current", deps.Handlers.AdminTenant.Current)
+
+			secured.GET("/platform-categories", deps.Handlers.AdminPlatform.ListCategories)
+			secured.POST("/platform-categories", deps.Handlers.AdminPlatform.CreateCategory)
+			secured.PUT("/platform-categories/:id", deps.Handlers.AdminPlatform.UpdateCategory)
+			secured.DELETE("/platform-categories/:id", deps.Handlers.AdminPlatform.DeleteCategory)
+			secured.GET("/banners", deps.Handlers.AdminPlatform.ListBanners)
+			secured.POST("/banners", deps.Handlers.AdminPlatform.CreateBanner)
+			secured.PUT("/banners/:id", deps.Handlers.AdminPlatform.UpdateBanner)
+			secured.DELETE("/banners/:id", deps.Handlers.AdminPlatform.DeleteBanner)
+			secured.GET("/site-settings", deps.Handlers.AdminPlatform.GetSiteSettings)
+			secured.PUT("/site-settings", deps.Handlers.AdminPlatform.UpdateSiteSettings)
+			secured.GET("/home-featured", deps.Handlers.AdminPlatform.ListFeatured)
+			secured.POST("/home-featured", deps.Handlers.AdminPlatform.AddFeatured)
+			secured.DELETE("/home-featured/:id", deps.Handlers.AdminPlatform.DeleteFeatured)
+			secured.PUT("/home-featured/sort", deps.Handlers.AdminPlatform.UpdateFeaturedSort)
+			secured.GET("/products/search", deps.Handlers.AdminPlatform.SearchProducts)
+
+			biz := secured.Group("")
+			biz.Use(middleware.AdminRequireTenant())
+			{
+				biz.GET("/products", deps.Handlers.AdminProduct.List)
+				biz.POST("/products", deps.Handlers.AdminProduct.Create)
+				biz.GET("/products/:id", deps.Handlers.AdminProduct.Detail)
+				biz.PUT("/products/:id", deps.Handlers.AdminProduct.Update)
+				biz.PATCH("/products/:id/status", deps.Handlers.AdminProduct.UpdateStatus)
+				biz.GET("/categories", deps.Handlers.AdminCategory.List)
+				biz.POST("/upload", deps.Handlers.AdminUpload.Upload)
+
+				biz.GET("/users", deps.Handlers.AdminUser.List)
+				biz.POST("/users/:id/balance", deps.Handlers.AdminUser.AdjustBalance)
+				biz.GET("/users/:id/balance-logs", deps.Handlers.AdminUser.BalanceLogs)
+
+				biz.GET("/orders", deps.Handlers.AdminOrder.List)
+				biz.POST("/orders/:order_no/ship", deps.Handlers.AdminOrder.Ship)
+
+				biz.GET("/coupons", deps.Handlers.AdminCoupon.List)
+				biz.POST("/coupons", deps.Handlers.AdminCoupon.Create)
+				biz.GET("/coupons/:id", deps.Handlers.AdminCoupon.Detail)
+				biz.PUT("/coupons/:id", deps.Handlers.AdminCoupon.Update)
+				biz.PATCH("/coupons/:id/status", deps.Handlers.AdminCoupon.UpdateStatus)
+			}
 		}
 	}
 

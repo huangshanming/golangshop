@@ -78,25 +78,52 @@ func NewApp(configPath string) (*App, error) {
 
 	userRepo := repository.NewUserRepo(db)
 	adminRepo := repository.NewAdminRepo(db)
+	rbacRepo := repository.NewRBACRepo(db)
 	productRepo := repository.NewProductRepo(db)
 	categoryRepo := repository.NewCategoryRepo(db)
 	cartRepo := repository.NewCartRepo(db)
 	orderRepo := repository.NewOrderRepo(db)
 	notifyRepo := repository.NewPayNotifyRepo(db)
+	balanceRepo := repository.NewBalanceRepo(db)
 
-	userSvc := service.NewUserService(userRepo, adminRepo, jwtMgr)
+	tenantRepo := repository.NewTenantRepo(db)
+	tenantSvc := service.NewTenantService(tenantRepo)
+
+	userSvc := service.NewUserService(userRepo, adminRepo, balanceRepo, orderRepo, jwtMgr)
+	rbacSvc := service.NewRBACService(rbacRepo, adminRepo, tenantRepo, jwtMgr)
+	if err := rbacSvc.EnsureDefaultRBAC(context.Background()); err != nil {
+		return nil, fmt.Errorf("rbac seed: %w", err)
+	}
+	if err := auth.SyncPolicies(enforcer, db); err != nil {
+		return nil, fmt.Errorf("casbin sync: %w", err)
+	}
+
 	addressRepo := repository.NewAddressRepo(db)
 	couponRepo := repository.NewCouponRepo(db)
 	freightRepo := repository.NewFreightRepo(db)
-	balanceRepo := repository.NewBalanceRepo(db)
 	afterSaleRepo := repository.NewAfterSaleRepo(db)
 
-	categorySvc := service.NewCategoryService(categoryRepo)
-	productSvc := service.NewProductService(productRepo, categoryRepo)
+	platformRepo := repository.NewPlatformRepo(db)
+	platformSvc := service.NewPlatformService(platformRepo, productRepo, tenantRepo)
+	if err := platformSvc.EnsurePlatformCategories(context.Background()); err != nil {
+		return nil, fmt.Errorf("platform categories: %w", err)
+	}
+	if err := platformSvc.EnsureDefaultSiteSettings(context.Background()); err != nil {
+		return nil, fmt.Errorf("platform settings: %w", err)
+	}
+	if err := platformSvc.EnsureDefaultBanners(context.Background()); err != nil {
+		return nil, fmt.Errorf("platform banners: %w", err)
+	}
+	if err := platformSvc.EnsureDefaultFeatured(context.Background()); err != nil {
+		return nil, fmt.Errorf("platform featured: %w", err)
+	}
+
+	categorySvc := service.NewCategoryService(platformSvc)
+	productSvc := service.NewProductService(productRepo, categoryRepo, platformRepo, tenantRepo)
 	cartSvc := service.NewCartService(cartRepo, productRepo)
 	addressSvc := service.NewAddressService(addressRepo)
 	couponSvc := service.NewCouponService(couponRepo)
-	balanceSvc := service.NewBalanceService(balanceRepo, userRepo)
+	balanceSvc := service.NewBalanceService(balanceRepo, userRepo, orderRepo)
 	checkoutSvc := service.NewCheckoutService(
 		orderRepo, productRepo, cartRepo, addressRepo, couponRepo, freightRepo, balanceRepo, userRepo, publisher, cfg.JWT.AppSecret,
 	)
@@ -115,8 +142,10 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	handlers := &server.Handlers{
-		AppAuth:       apphandler.NewAuthHandler(userSvc),
+		AppAuth:       apphandler.NewAuthHandler(userSvc, tenantSvc),
+		AppUser:       apphandler.NewUserHandler(userSvc),
 		AppProduct:    apphandler.NewProductHandler(productSvc),
+		AppHome:       apphandler.NewHomeHandler(platformSvc, productSvc),
 		AppCategory:   apphandler.NewCategoryHandler(categorySvc),
 		AppCart:       apphandler.NewCartHandler(cartSvc),
 		AppOrder:      apphandler.NewOrderHandler(orderSvc, paySvc),
@@ -124,12 +153,17 @@ func NewApp(configPath string) (*App, error) {
 		AppCoupon:     apphandler.NewCouponHandler(couponSvc),
 		AppAfterSale:  apphandler.NewAfterSaleHandler(afterSaleSvc),
 		AppPayNotify:  apphandler.NewPayNotifyHandler(paySvc),
-		AdminAuth:     adminhandler.NewAuthHandler(userSvc),
-		AdminProduct:  adminhandler.NewProductHandler(productSvc),
+		AppTenant:     apphandler.NewTenantHandler(tenantSvc),
+		AdminAuth:     adminhandler.NewAuthHandler(rbacSvc, enforcer, db),
+		AdminRBAC:     adminhandler.NewRBACHandler(rbacSvc),
+		AdminProduct:  adminhandler.NewProductHandler(productSvc, platformSvc),
+		AdminPlatform: adminhandler.NewPlatformHandler(platformSvc, productSvc),
 		AdminCategory: adminhandler.NewCategoryHandler(categorySvc),
 		AdminUpload:   adminhandler.NewUploadHandler(uploadSvc),
 		AdminUser:     adminhandler.NewAdminUserHandler(balanceSvc),
 		AdminOrder:    adminhandler.NewAdminOrderHandler(orderSvc),
+		AdminCoupon:   adminhandler.NewCouponHandler(couponSvc),
+		AdminTenant:   adminhandler.NewAdminTenantHandler(tenantSvc),
 	}
 
 	go func() {

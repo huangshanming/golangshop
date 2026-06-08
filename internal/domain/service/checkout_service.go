@@ -139,14 +139,18 @@ func (s *CheckoutService) Preview(ctx context.Context, tenantID, userID uint64, 
 	if err != nil {
 		return nil, err
 	}
-	freight, err := s.calcFreight(ctx, tenantID, goodsAmount-discount)
+	freight, err := s.calcFreight(ctx, tenantID, goodsAmount)
 	if err != nil {
 		return nil, err
 	}
 	payAmount := goodsAmount - discount + freight
+	effectiveAddressID := req.AddressID
+	if effectiveAddressID == 0 && addr != nil {
+		effectiveAddressID = addr.ID
+	}
 	exp := time.Now().Add(previewTokenTTL).Unix()
 	token, err := signPreview(s.previewSecret, previewPayload{
-		TenantID: tenantID, UserID: userID, AddressID: req.AddressID,
+		TenantID: tenantID, UserID: userID, AddressID: effectiveAddressID,
 		UserCouponID: req.UserCouponID, Items: signItems,
 		GoodsAmount: goodsAmount, DiscountAmt: discount, FreightAmt: freight,
 		PayAmount: payAmount, ExpiresAt: exp,
@@ -240,7 +244,7 @@ func calcCouponDiscount(coupon *model.Coupon, goodsAmount int64) int64 {
 	}
 }
 
-func (s *CheckoutService) calcFreight(ctx context.Context, tenantID uint64, afterDiscount int64) (int64, error) {
+func (s *CheckoutService) calcFreight(ctx context.Context, tenantID uint64, goodsAmount int64) (int64, error) {
 	rule, err := s.freightRepo.GetDefault(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -248,7 +252,8 @@ func (s *CheckoutService) calcFreight(ctx context.Context, tenantID uint64, afte
 		}
 		return 0, err
 	}
-	if afterDiscount >= rule.FreeThreshold {
+	// 免邮门槛按券前商品金额判断，避免使用优惠券后反而产生运费
+	if goodsAmount >= rule.FreeThreshold {
 		return 0, nil
 	}
 	return rule.BaseFreight, nil
@@ -278,7 +283,7 @@ func (s *CheckoutService) Create(ctx context.Context, tenantID, userID uint64, r
 	if err != nil {
 		return nil, err
 	}
-	freight, err := s.calcFreight(ctx, tenantID, goodsAmount-discount)
+	freight, err := s.calcFreight(ctx, tenantID, goodsAmount)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +338,7 @@ func (s *CheckoutService) Create(ctx context.Context, tenantID, userID uint64, r
 			})
 		}
 		order = &model.Order{
-			TenantScoped:   model.TenantScoped{TenantID: tenantID},
+			TenantID:       tenantID,
 			OrderNo:        "O" + uuid.New().String()[:8] + fmt.Sprintf("%d", now%100000),
 			ClientOrderNo:  req.ClientOrderNo,
 			UserID:         userID,

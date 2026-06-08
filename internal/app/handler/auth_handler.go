@@ -9,11 +9,12 @@ import (
 )
 
 type AuthHandler struct {
-	userSvc *service.UserService
+	userSvc   *service.UserService
+	tenantSvc *service.TenantService
 }
 
-func NewAuthHandler(userSvc *service.UserService) *AuthHandler {
-	return &AuthHandler{userSvc: userSvc}
+func NewAuthHandler(userSvc *service.UserService, tenantSvc *service.TenantService) *AuthHandler {
+	return &AuthHandler{userSvc: userSvc, tenantSvc: tenantSvc}
 }
 
 type AppLoginReq struct {
@@ -31,5 +32,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		response.Fail(c, 50000, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"token": token, "user": user})
+	tenant, _ := h.tenantSvc.Get(c.Request.Context(), middleware.GetTenantID(c))
+	resp := gin.H{"token": token, "user": user}
+	if tenant != nil {
+		resp["tenant"] = tenant
+	}
+	response.OK(c, resp)
 }

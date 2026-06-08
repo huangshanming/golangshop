@@ -13,7 +13,6 @@ const instance = axios.create({
 })
 
 instance.interceptors.request.use((config) => {
-  config.headers['X-Tenant-Id'] = import.meta.env.VITE_TENANT_ID || '1'
   const token = localStorage.getItem('admin_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -31,6 +30,12 @@ instance.interceptors.response.use(
     return Promise.reject(body)
   },
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('admin_token')
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
     ElMessage.error(err.message || '网络错误')
     return Promise.reject(err)
   }

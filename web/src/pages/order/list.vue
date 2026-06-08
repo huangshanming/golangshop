@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchOrders, type Order } from '../../api/order'
 import PriceTag from '../../components/PriceTag.vue'
-import { formatPrice } from '../../utils/format'
+import { formatDateTime, formatPrice } from '../../utils/format'
 import { useUserStore } from '../../stores/user'
 
 const userStore = useUserStore()
@@ -94,7 +94,10 @@ function goLogin() {
     <view v-else-if="orders.length > 0" class="list">
       <view v-for="order in orders" :key="order.id" class="order-card" @click="goDetail(order.order_no)">
         <view class="order-header">
-          <text class="order-no">{{ order.order_no }}</text>
+          <view class="order-meta">
+            <text class="order-no">{{ order.order_no }}</text>
+            <text class="order-time">{{ formatDateTime(order.created_at) }}</text>
+          </view>
           <text class="status">{{ order.display_status }}</text>
         </view>
         <view v-for="item in order.items" :key="item.id" class="goods-row">
@@ -197,8 +200,19 @@ function goLogin() {
   border-bottom: 2rpx solid #f5f5f5;
 }
 .order-no {
+  display: block;
   font-size: 24rpx;
   color: #999;
+}
+.order-time {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #ccc;
+}
+.order-meta {
+  flex: 1;
+  min-width: 0;
 }
 .status {
   font-size: 26rpx;

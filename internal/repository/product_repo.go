@@ -14,6 +14,8 @@ type ProductRepo struct {
 
 func NewProductRepo(db *gorm.DB) *ProductRepo { return &ProductRepo{db: db} }
 
+func (r *ProductRepo) DB() *gorm.DB { return r.db }
+
 type ProductListFilter struct {
 	CategoryID uint64
 	Keyword    string
@@ -33,6 +35,77 @@ func (r *ProductRepo) applyFilter(q *gorm.DB, tenantID uint64, f ProductListFilt
 		q = q.Where("name LIKE ? OR subtitle LIKE ?", like, like)
 	}
 	return q
+}
+
+type ProductWithTenant struct {
+	model.Product
+	TenantName string `gorm:"column:tenant_name"`
+}
+
+type MarketplaceListFilter struct {
+	Keyword     string
+	CategoryIDs []uint64
+	TenantID    *uint64
+	ProductIDs  []uint64
+}
+
+func (r *ProductRepo) ListAcrossTenants(ctx context.Context, page, pageSize int, keyword string, categoryIDs []uint64, tenantID *uint64) ([]ProductWithTenant, int64, error) {
+	return r.ListAcrossTenantsFiltered(ctx, page, pageSize, MarketplaceListFilter{
+		Keyword: keyword, CategoryIDs: categoryIDs, TenantID: tenantID,
+	})
+}
+
+func (r *ProductRepo) ListAcrossTenantsFiltered(ctx context.Context, page, pageSize int, f MarketplaceListFilter) ([]ProductWithTenant, int64, error) {
+	var list []ProductWithTenant
+	var total int64
+	q := r.db.WithContext(ctx).Model(&model.Product{}).
+		Joins("JOIN tenants ON tenants.id = products.tenant_id").
+		Where("products.status = 1 AND tenants.status = 1")
+	if f.Keyword != "" {
+		like := "%" + f.Keyword + "%"
+		q = q.Where("products.name LIKE ? OR products.subtitle LIKE ?", like, like)
+	}
+	if len(f.CategoryIDs) > 0 {
+		q = q.Where("products.category_id IN ?", f.CategoryIDs)
+	}
+	if f.TenantID != nil && *f.TenantID > 0 {
+		q = q.Where("products.tenant_id = ?", *f.TenantID)
+	}
+	if len(f.ProductIDs) > 0 {
+		q = q.Where("products.id IN ?", f.ProductIDs)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	offset := (page - 1) * pageSize
+	err := q.Select("products.*, tenants.name AS tenant_name").
+		Offset(offset).Limit(pageSize).Order("products.id DESC").
+		Find(&list).Error
+	return list, total, err
+}
+
+func (r *ProductRepo) GetByIDGlobal(ctx context.Context, id uint64) (*model.Product, error) {
+	var p model.Product
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&p).Error
+	return &p, err
+}
+
+func (r *ProductRepo) ListSKUByProductsGlobal(ctx context.Context, productIDs []uint64) (map[uint64][]model.ProductSKU, error) {
+	result := make(map[uint64][]model.ProductSKU)
+	if len(productIDs) == 0 {
+		return result, nil
+	}
+	var skus []model.ProductSKU
+	err := r.db.WithContext(ctx).
+		Where("product_id IN ? AND status = 1", productIDs).
+		Find(&skus).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, sku := range skus {
+		result[sku.ProductID] = append(result[sku.ProductID], sku)
+	}
+	return result, nil
 }
 
 func (r *ProductRepo) List(ctx context.Context, tenantID uint64, page, pageSize int, f ProductListFilter) ([]model.Product, int64, error) {

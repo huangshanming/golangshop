@@ -13,6 +13,7 @@ export interface SpecDimension {
 
 export interface ProductListItem {
   id: number
+  tenant_id: number
   category_id: number
   name: string
   subtitle: string
@@ -27,6 +28,7 @@ export interface ProductListItem {
   original_price: number
   total_stock: number
   category_name: string
+  tenant_name?: string
 }
 
 export interface ProductSKU {
@@ -65,8 +67,22 @@ export function fetchProducts(params: {
   return get<PageResult<ProductListItem>>('/api/v1/app/products', params as Record<string, unknown>)
 }
 
+export function fetchMarketplaceProducts(params: {
+  page?: number
+  page_size?: number
+  keyword?: string
+  category_id?: number
+  tenant_id?: number
+}) {
+  return get<PageResult<ProductListItem>>('/api/v1/public/products', params as Record<string, unknown>)
+}
+
 export function fetchProductDetail(id: number | string) {
   return get<ProductDetail>(`/api/v1/app/products/${id}`)
+}
+
+export function fetchProductDetailPublic(id: number | string) {
+  return get<ProductDetail>(`/api/v1/public/products/${id}`)
 }
 
 export function parseImages(images?: string, cover?: string): string[] {

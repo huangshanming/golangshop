@@ -4,7 +4,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"goshop/internal/domain/service"
-	"goshop/internal/middleware"
 	"goshop/pkg/response"
 )
 
@@ -17,10 +16,10 @@ func NewCategoryHandler(svc *service.CategoryService) *CategoryHandler {
 }
 
 func (h *CategoryHandler) List(c *gin.Context) {
-	list, err := h.svc.List(c.Request.Context(), middleware.GetTenantID(c))
+	tree, err := h.svc.ListTree(c.Request.Context())
 	if err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
 	}
-	response.OK(c, list)
+	response.OK(c, tree)
 }

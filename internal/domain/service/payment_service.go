@@ -72,11 +72,11 @@ func (s *PaymentService) CreatePay(ctx context.Context, tenantID, userID uint64,
 		return map[string]interface{}{"paid": true, "channel": "balance"}, nil
 	case "wechat":
 		return s.wechat.CreatePrepay(ctx, wechat.PrepayRequest{
-			OrderNo: order.OrderNo, Description: "GoShop Order", Amount: amount, OpenID: req.OpenID,
+			OrderNo: order.OrderNo, Description: "搜店网订单", Amount: amount, OpenID: req.OpenID,
 		})
 	case "alipay":
 		return s.alipay.CreatePrepay(ctx, alipay.PrepayRequest{
-			OrderNo: order.OrderNo, Subject: "GoShop Order", Amount: amount,
+			OrderNo: order.OrderNo, Subject: "搜店网订单", Amount: amount,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported channel")

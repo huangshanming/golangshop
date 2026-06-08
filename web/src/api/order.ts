@@ -28,6 +28,10 @@ export interface Order {
   pay_channel: string
   address_snapshot: string
   remark: string
+  express_company: string
+  express_no: string
+  ship_remark: string
+  shipped_at?: number
   expire_at: number
   created_at: string
   items: OrderItem[]
@@ -132,4 +136,21 @@ export function createAfterSale(data: {
 
 export function genClientOrderNo() {
   return `C${Date.now()}${Math.floor(Math.random() * 10000)}`
+}
+
+export const expressCompanyMap: Record<string, string> = {
+  SF: '顺丰速运',
+  ZTO: '中通快递',
+  YTO: '圆通速递',
+  YD: '韵达快递',
+  STO: '申通快递',
+  JTSD: '极兔速递',
+  EMS: '邮政 EMS',
+  JD: '京东物流',
+  DBL: '德邦快递',
+  OTHER: '其他快递',
+}
+
+export function expressCompanyName(code: string) {
+  return expressCompanyMap[code] || code || '-'
 }

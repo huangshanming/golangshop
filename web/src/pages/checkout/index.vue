@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { formatAddress, fetchAddresses, type Address } from '../../api/address'
 import { fetchAvailableCoupons, type CouponItem } from '../../api/coupon'
 import {
   createOrder,

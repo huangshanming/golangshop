@@ -15,10 +15,11 @@ func (User) TableName() string { return "users" }
 
 type AdminUser struct {
 	BaseModel
-	TenantScoped
+	TenantID uint64 `gorm:"uniqueIndex:idx_tenant_username,priority:1;index;not null" json:"tenant_id"`
 	Username string `gorm:"size:64;uniqueIndex:idx_tenant_username,priority:2;not null" json:"username"`
 	Password string `gorm:"size:128;not null" json:"-"`
 	Nickname string `gorm:"size:64" json:"nickname"`
+	UserType string `gorm:"size:16;default:tenant;index" json:"user_type"`
 	Role     string `gorm:"size:32;default:admin" json:"role"`
 	Status   int8   `gorm:"default:1" json:"status"`
 }

@@ -2,19 +2,16 @@ package service
 
 import (
 	"context"
-
-	"goshop/internal/domain/model"
-	"goshop/internal/repository"
 )
 
 type CategoryService struct {
-	repo *repository.CategoryRepo
+	platform *PlatformService
 }
 
-func NewCategoryService(repo *repository.CategoryRepo) *CategoryService {
-	return &CategoryService{repo: repo}
+func NewCategoryService(platform *PlatformService) *CategoryService {
+	return &CategoryService{platform: platform}
 }
 
-func (s *CategoryService) List(ctx context.Context, tenantID uint64) ([]model.ProductCategory, error) {
-	return s.repo.List(ctx, tenantID)
+func (s *CategoryService) ListTree(ctx context.Context) ([]PlatformCategoryTreeItem, error) {
+	return s.platform.ListCategoryTree(ctx, true)
 }

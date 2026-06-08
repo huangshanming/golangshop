@@ -21,7 +21,7 @@ func NewAdminUserHandler(balanceSvc *service.BalanceService) *AdminUserHandler {
 func (h *AdminUserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	list, total, err := h.balanceSvc.ListUsers(c.Request.Context(), middleware.GetTenantID(c), page, pageSize, c.Query("keyword"))
+	list, total, err := h.balanceSvc.ListUsers(c.Request.Context(), middleware.GetAdminDataTenantID(c), page, pageSize, c.Query("keyword"))
 	if err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
@@ -41,7 +41,7 @@ func (h *AdminUserHandler) AdjustBalance(c *gin.Context) {
 		response.Fail(c, 40000, err.Error())
 		return
 	}
-	if err := h.balanceSvc.Adjust(c.Request.Context(), middleware.GetTenantID(c), id, req.ChangeAmount, req.Remark, middleware.GetUserID(c)); err != nil {
+	if err := h.balanceSvc.Adjust(c.Request.Context(), middleware.GetAdminDataTenantID(c), id, req.ChangeAmount, req.Remark, middleware.GetUserID(c)); err != nil {
 		response.Fail(c, 40025, err.Error())
 		return
 	}
@@ -52,7 +52,7 @@ func (h *AdminUserHandler) BalanceLogs(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	page, _ := strconv.ParseInt(c.DefaultQuery("page", "1"), 10, 64)
 	pageSize, _ := strconv.ParseInt(c.DefaultQuery("page_size", "20"), 10, 64)
-	list, total, err := h.balanceSvc.ListLogs(c.Request.Context(), middleware.GetTenantID(c), id, int(page), int(pageSize))
+	list, total, err := h.balanceSvc.ListLogs(c.Request.Context(), middleware.GetAdminDataTenantID(c), id, int(page), int(pageSize))
 	if err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
@@ -77,7 +77,7 @@ func (h *AdminOrderHandler) List(c *gin.Context) {
 		v8 := int8(v)
 		status = &v8
 	}
-	list, total, err := h.orderSvc.ListAdmin(c.Request.Context(), middleware.GetTenantID(c), page, pageSize, status)
+	list, total, err := h.orderSvc.ListAdmin(c.Request.Context(), middleware.GetAdminDataTenantID(c), page, pageSize, status)
 	if err != nil {
 		response.Fail(c, 50000, err.Error())
 		return
@@ -87,8 +87,13 @@ func (h *AdminOrderHandler) List(c *gin.Context) {
 
 func (h *AdminOrderHandler) Ship(c *gin.Context) {
 	orderNo := c.Param("order_no")
-	if err := h.orderSvc.Ship(c.Request.Context(), middleware.GetTenantID(c), orderNo); err != nil {
-		response.Fail(c, 50000, err.Error())
+	var req service.ShipOrderReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 40000, err.Error())
+		return
+	}
+	if err := h.orderSvc.Ship(c.Request.Context(), middleware.GetAdminDataTenantID(c), orderNo, req); err != nil {
+		response.Fail(c, 40010, err.Error())
 		return
 	}
 	response.OK(c, nil)

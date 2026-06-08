@@ -1,5 +1,14 @@
 const BASE_URL = import.meta.env.VITE_API_BASE || ''
-const TENANT_ID = import.meta.env.VITE_TENANT_ID || '1'
+
+function resolveTenantId(): string {
+  try {
+    const id = uni.getStorageSync('tenant_id')
+    if (id) return String(id)
+  } catch {
+    /* ignore */
+  }
+  return import.meta.env.VITE_TENANT_ID || '1'
+}
 
 export interface ApiResponse<T = unknown> {
   code: number
@@ -15,7 +24,7 @@ export function request<T>(options: UniApp.RequestOptions): Promise<T> {
       url: `${BASE_URL}${options.url}`,
       header: {
         'Content-Type': 'application/json',
-        'X-Tenant-Id': TENANT_ID,
+        'X-Tenant-Id': resolveTenantId(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.header,
       },

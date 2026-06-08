@@ -43,8 +43,19 @@ const form = reactive({
   skus: [] as SkuMatrixRow[],
 })
 
+function firstCategoryId(nodes: Category[]): number {
+  for (const n of nodes) {
+    if (n.children?.length) {
+      const child = firstCategoryId(n.children)
+      if (child) return child
+    }
+    return n.id
+  }
+  return 0
+}
+
 function resetForm() {
-  form.category_id = categories.value[0]?.id || 0
+  form.category_id = firstCategoryId(categories.value)
   form.name = ''
   form.subtitle = ''
   form.description = ''
@@ -170,9 +181,14 @@ onMounted(async () => {
           <el-input v-model="form.subtitle" placeholder="卖点简述" style="max-width: 480px" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-select v-model="form.category_id" placeholder="选择分类" style="width: 240px">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
+          <el-tree-select
+            v-model="form.category_id"
+            :data="categories"
+            :props="{ label: 'name', value: 'id', children: 'children' }"
+            check-strictly
+            placeholder="选择平台分类"
+            style="width: 280px"
+          />
         </el-form-item>
         <el-form-item label="封面图">
           <ImageUpload v-model="form.cover_image" />

@@ -16,11 +16,23 @@ const (
 )
 
 type Claims struct {
-	UserID   uint64    `json:"user_id"`
-	TenantID uint64    `json:"tenant_id"`
-	Username string    `json:"username,omitempty"`
-	Type     TokenType `json:"type"`
+	UserID         uint64    `json:"user_id"`
+	TenantID       uint64    `json:"tenant_id"`
+	ActiveTenantID uint64    `json:"active_tenant_id,omitempty"`
+	UserType       string    `json:"user_type,omitempty"`
+	Roles          []string  `json:"roles,omitempty"`
+	Username       string    `json:"username,omitempty"`
+	Type           TokenType `json:"type"`
 	jwt.RegisteredClaims
+}
+
+type AdminTokenParams struct {
+	UserID         uint64
+	TenantID       uint64
+	ActiveTenantID uint64
+	UserType       string
+	Roles          []string
+	Username       string
 }
 
 type Manager struct {
@@ -40,20 +52,23 @@ func NewManager(appSecret, adminSecret string, appHours, adminHours int) *Manage
 }
 
 func (m *Manager) GenerateAppToken(userID, tenantID uint64) (string, error) {
-	return m.sign(TokenTypeApp, userID, tenantID, "", m.appSecret, m.appExpire)
+	return m.sign(TokenTypeApp, userID, tenantID, 0, "", nil, "", m.appSecret, m.appExpire)
 }
 
-func (m *Manager) GenerateAdminToken(userID, tenantID uint64, username string) (string, error) {
-	return m.sign(TokenTypeAdmin, userID, tenantID, username, m.adminSecret, m.adminExpire)
+func (m *Manager) GenerateAdminToken(p AdminTokenParams) (string, error) {
+	return m.sign(TokenTypeAdmin, p.UserID, p.TenantID, p.ActiveTenantID, p.UserType, p.Roles, p.Username, m.adminSecret, m.adminExpire)
 }
 
-func (m *Manager) sign(tokenType TokenType, userID, tenantID uint64, username string, secret []byte, expire time.Duration) (string, error) {
+func (m *Manager) sign(tokenType TokenType, userID, tenantID, activeTenantID uint64, userType string, roles []string, username string, secret []byte, expire time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
-		UserID:   userID,
-		TenantID: tenantID,
-		Username: username,
-		Type:     tokenType,
+		UserID:         userID,
+		TenantID:       tenantID,
+		ActiveTenantID: activeTenantID,
+		UserType:       userType,
+		Roles:          roles,
+		Username:       username,
+		Type:           tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(expire)),
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -23,12 +23,18 @@ function goDetail() {
     uni.redirectTo({ url: `/pages/order/detail?order_no=${orderNo.value}` })
   }
 }
+
+function goPay() {
+  if (orderNo.value) {
+    uni.redirectTo({ url: `/pages/pay/index?order_no=${orderNo.value}` })
+  }
+}
 </script>
 
 <template>
   <view class="page">
     <view class="result-card">
-      <text class="icon">{{ success ? '✓' : '✕' }}</text>
+      <text class="icon" :class="{ fail: !success }">{{ success ? '✓' : '✕' }}</text>
       <text class="title">{{ success ? '支付成功' : '支付失败' }}</text>
       <text class="desc">
         {{ success ? '您的订单已支付成功，我们会尽快为您发货' : '支付未完成，请重试或选择其他支付方式' }}
@@ -38,7 +44,7 @@ function goDetail() {
 
     <view class="actions">
       <button v-if="success" class="primary-btn" @click="goDetail">查看订单</button>
-      <button v-else class="primary-btn" @click="goDetail">重新支付</button>
+      <button v-else class="primary-btn" @click="goPay">重新支付</button>
       <button class="secondary-btn" @click="goOrders">我的订单</button>
       <button class="secondary-btn" @click="goHome">返回首页</button>
     </view>
@@ -69,9 +75,8 @@ function goDetail() {
   background: #07c160;
   border-radius: 50%;
 }
-.result-card:has(.title:contains('失败')) .icon,
-.page .icon {
-  /* fallback handled below */
+.icon.fail {
+  background: #ff4d4f;
 }
 .title {
   display: block;
