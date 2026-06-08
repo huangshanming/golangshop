@@ -1,0 +1,49 @@
+server:
+  mode: debug
+  port: 8888
+
+database:
+  host: localhost
+  port: 3307
+  user: goshop
+  password: goshop123
+  dbname: goshop
+  charset: utf8mb4
+  max_idle: 10
+  max_open: 100
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+rabbitmq:
+  url: amqp://goshop:goshop123@localhost:5672/
+
+jwt:
+  app_secret: change-me-app-secret
+  admin_secret: change-me-admin-secret
+  app_expire_hours: 168
+  admin_expire_hours: 24
+
+minio:
+  endpoint: localhost:9000
+  access_key: goshop
+  secret_key: goshop123
+  bucket: goshop
+  use_ssl: false
+
+payment:
+  wechat:
+    app_id: ""
+    mch_id: ""
+    api_v3_key: ""
+    serial_no: ""
+    private_key_path: ""
+    notify_url: ""
+  alipay:
+    app_id: ""
+    private_key: ""
+    alipay_public_key: ""
+    notify_url: ""
+    is_prod: false

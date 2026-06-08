@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: GoShop API
+  version: 1.0.0
+  description: GoShop 商城 REST API
+servers:
+  - url: http://localhost:8080
+    description: Local
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      schema:
+        type: integer
+        example: 1
+  schemas:
+    Response:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+paths:
+  /api/v1/app/auth/login:
+    post:
+      tags: [App]
+      summary: C端登录
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: OK
+  /api/v1/admin/auth/login:
+    post:
+      tags: [Admin]
+      summary: 管理端登录
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: OK
+  /api/v1/app/products:
+    get:
+      tags: [App]
+      summary: 商品列表
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /api/v1/app/orders:
+    post:
+      tags: [App]
+      summary: 创建订单
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_order_no, items]
+              properties:
+                client_order_no:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sku_id:
+                        type: integer
+                      quantity:
+                        type: integer
+      responses:
+        '200':
+          description: OK
+  /api/v1/pay/notify/wechat:
+    post:
+      tags: [Pay]
+      summary: 微信支付回调
+      responses:
+        '200':
+          description: SUCCESS
+  /api/v1/pay/notify/alipay:
+    post:
+      tags: [Pay]
+      summary: 支付宝回调
+      responses:
+        '200':
+          description: success

@@ -1,0 +1,26 @@
+# Go
+/bin/
+/tmp/
+*.exe
+*.test
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Frontend
+node_modules/
+dist/
+unpackage/
+.hbuilderx/
+
+# Env
+.env
+.env.local
+config.local.yaml
+*.log
+
+# OS
+.DS_Store

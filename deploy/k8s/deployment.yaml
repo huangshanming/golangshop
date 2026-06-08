@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: goshop-server
+  namespace: goshop
+  labels:
+    app: goshop-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: goshop-server
+  template:
+    metadata:
+      labels:
+        app: goshop-server
+    spec:
+      containers:
+        - name: goshop-server
+          image: goshop/server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          args: ["-config", "/app/config/config.yaml"]
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: goshop-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: goshop-server
+  namespace: goshop
+spec:
+  selector:
+    app: goshop-server
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: goshop-server-hpa
+  namespace: goshop
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: goshop-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: goshop-ingress
+  namespace: goshop
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.goshop.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: goshop-server
+                port:
+                  number: 80
